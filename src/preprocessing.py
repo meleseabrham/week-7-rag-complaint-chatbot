@@ -1,7 +1,5 @@
 import pandas as pd
 import re
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 def load_data(file_path):
     """Load the complaint dataset."""
@@ -9,15 +7,31 @@ def load_data(file_path):
 
 def filter_data(df):
     """Filter dataset by products and non-empty narratives."""
-    target_products = [
-        'Credit card', 
-        'Personal loan', 
-        'Buy Now, Pay Later (BNPL)', 
-        'Savings account', 
-        'Money transfers'
-    ]
+    target_products_map = {
+        'Credit card': ['Credit card', 'Credit card or prepaid card'],
+        'Personal loan': [
+            'Payday loan, title loan, personal loan, or advance loan', 
+            'Payday loan, title loan, or personal loan', 
+            'Consumer Loan', 
+            'Payday loan'
+        ],
+        'Savings account': ['Checking or savings account', 'Bank account or service'],
+        'Money transfers': [
+            'Money transfers', 
+            'Money transfer, virtual currency, or money service'
+        ],
+        'Buy Now, Pay Later (BNPL)': ['Buy Now, Pay Later (BNPL)']
+    }
+    
+    # Flatten the map to get a flat list of product names to filter
+    all_target_products = [item for sublist in target_products_map.values() for item in sublist]
+    
     # Filter products
-    df_filtered = df[df['Product'].isin(target_products)].copy()
+    df_filtered = df[df['Product'].isin(all_target_products)].copy()
+    
+    # Map back to standard names (optional but good for consistency)
+    reverse_map = {v: k for k, list_v in target_products_map.items() for v in list_v}
+    df_filtered['Product'] = df_filtered['Product'].map(reverse_map)
     
     # Remove records with empty Consumer complaint narrative
     df_filtered = df_filtered.dropna(subset=['Consumer complaint narrative'])
