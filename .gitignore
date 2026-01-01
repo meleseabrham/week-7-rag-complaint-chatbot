@@ -121,4 +121,5 @@ cython_debug/
 vector_store/
 
 # Data
-data/
+data/**/*.csv
+data/*.csv
