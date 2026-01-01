@@ -1,7 +1,5 @@
 import pandas as pd
 import re
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 def load_data(file_path):
     """Load the complaint dataset."""
