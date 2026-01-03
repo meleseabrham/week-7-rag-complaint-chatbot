@@ -3,8 +3,11 @@ import sys
 import os
 import time
 
-# Add src to path if needed
-sys.path.append(os.path.join(os.getcwd(), 'src'))
+# Robust path handling for src
+current_dir = os.path.dirname(os.path.abspath(__file__))
+src_path = os.path.join(current_dir, 'src')
+if src_path not in sys.path:
+    sys.path.append(src_path)
 
 from rag_pipeline import RAGPipeline
 
