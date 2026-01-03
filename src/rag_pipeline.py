@@ -5,6 +5,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import PromptTemplate
 from transformers import pipeline, AutoModelForSeq2SeqLM, AutoTokenizer, TextIteratorStreamer
 from threading import Thread
+from sentence_transformers import CrossEncoder
 
 class RAGPipeline:
     def __init__(self, vector_store_path="vector_store/faiss_index", model_name="all-MiniLM-L6-v2"):
@@ -24,6 +25,10 @@ class RAGPipeline:
         self.tokenizer = AutoTokenizer.from_pretrained(model_id)
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_id)
         
+        # Re-ranker Setup
+        print("Loading Cross-Encoder for re-ranking...")
+        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+        
         self.pipe = pipeline(
             "text2text-generation", 
             model=self.model, 
@@ -32,56 +37,116 @@ class RAGPipeline:
             device=-1 # CPU
         )
         
-        self.template = """You are a financial analyst assistant for CrediTrust. Your task is to provide accurate answers about customer complaints using ONLY the provided context.
+        self.template = """You are 'CrediTrust AI', a sophisticated financial analyst assistant. 
 
-Instructions:
-1. If the context contains the answer, summarize it clearly.
-2. If the context does NOT explicitly mention the topic or contain the answer, state: "Based on the retrieved snippets, I don't have enough information to confirm that."
-3. Do NOT make up facts or say 'No' unless the context explicitly provides a negative.
+Your Goal:
+1. Be helpful, professional, and descriptive.
+2. If the 'Context' below contains relevant information, prioritize it and cite facts from it.
+3. If the 'Context' does NOT have the answer, do NOT just say 'No'. Instead, provide a general helpful explanation of the financial topic asked (like BNPL, Credit Cards, etc.) and mention that you couldn't find specific customer complaints about it in the database.
+4. Avoid one-word answers. 
 
 Chat History:
 {history}
 
-Context: {context}
+Context (Complaint Snippets):
+{context}
 
-Question: {question}
+User Question: {question}
 
-Answer:"""
+Helpful Response:"""
 
-    def answer_question(self, question, history="", k=5):
-        """Advanced RAG implementation with history and parameterized retrieval."""
-        # 1. Retrieval
-        docs = self.vector_store.similarity_search(question, k=k)
-        context = "\n\n".join([f"[Source {i+1}]: {d.page_content}" for i, d in enumerate(docs)])
+    def _get_variants(self, query):
+        """Simple rule-based multi-query variation for recall boost."""
+        variants = [query]
+        expansions = {
+            "bnpl": ["Buy Now Pay Later", "installments", "point of sale financing"],
+            "credit card": ["cc", "credit limit", "card fees"],
+            "money transfer": ["wire transfer", "western union", "remittance"],
+            "savings account": ["checking", "bank fees", "interest rates"]
+        }
+        for key, vals in expansions.items():
+            if key in query.lower():
+                variants.extend(vals)
+        return list(set(variants))
+
+    def _rerank_docs(self, query, docs, top_n=5):
+        """Use Cross-Encoder to re-rank retrieved documents."""
+        if not docs:
+            return []
         
-        # 2. Generation
+        pairs = [[query, d.page_content] for d in docs]
+        scores = self.reranker.predict(pairs)
+        
+        # Sort documents by scores
+        ranked_docs = [d for _, d in sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)]
+        return ranked_docs[:top_n]
+
+    def answer_question(self, question, history="", k=20):
+        """Advanced Hybrid RAG with Multi-Query Retrieval and Re-ranking."""
+        # 1. Multi-Query Retrieval
+        search_queries = self._get_variants(question)
+        all_docs = []
+        for q in search_queries:
+            all_docs.extend(self.vector_store.similarity_search(q, k=k//len(search_queries)))
+        
+        # De-duplicate docs by page_content
+        unique_docs = {d.page_content: d for d in all_docs}.values()
+        
+        # 2. Re-ranking
+        ranked_docs = self._rerank_docs(question, list(unique_docs))
+        
+        # 3. Generation
+        context = "\n\n".join([f"Snippet {i+1}: {d.page_content}" for i, d in enumerate(ranked_docs)])
         prompt = self.template.format(history=history, context=context, question=question)
-        response = self.pipe(prompt)
+        
+        response = self.pipe(
+            prompt, 
+            max_new_tokens=256,
+            min_new_tokens=20,
+            repetition_penalty=1.2,
+            do_sample=True,
+            temperature=0.7
+        )
         
         return {
             "result": response[0]["generated_text"],
-            "source_documents": docs,
+            "source_documents": ranked_docs,
             "prompt_used": prompt
         }
 
-    def stream_answer(self, question, history="", k=5):
-        """Yield tokens using TextIteratorStreamer for Streamlit."""
+    def stream_answer(self, question, history="", k=20):
+        """Advanced Streaming RAG with Re-ranking."""
         # 1. Retrieval
-        docs = self.vector_store.similarity_search(question, k=k)
-        context = "\n\n".join([f"[Source {i+1}]: {d.page_content}" for i, d in enumerate(docs)])
+        search_queries = self._get_variants(question)
+        all_docs = []
+        for q in search_queries:
+            all_docs.extend(self.vector_store.similarity_search(q, k=max(1, k//len(search_queries))))
         
-        # 2. Generation Setup
+        unique_docs = list({d.page_content: d for d in all_docs}.values())
+        
+        # 2. Re-ranking
+        ranked_docs = self._rerank_docs(question, unique_docs)
+        
+        # 3. Generation Setup
+        context = "\n\n".join([f"Snippet {i+1}: {d.page_content}" for i, d in enumerate(ranked_docs)])
         prompt = self.template.format(history=history, context=context, question=question)
         inputs = self.tokenizer(prompt, return_tensors="pt")
         
         streamer = TextIteratorStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True)
         
-        # 3. Threaded Generation
-        generation_kwargs = dict(**inputs, streamer=streamer, max_new_tokens=256)
+        generation_kwargs = dict(
+            **inputs, 
+            streamer=streamer, 
+            max_new_tokens=256,
+            min_new_tokens=20,
+            repetition_penalty=1.2,
+            do_sample=True,
+            temperature=0.7
+        )
         thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
         thread.start()
         
-        return streamer, docs
+        return streamer, ranked_docs
 
 def run_evaluation(rag, report_path="reports/task3_evaluation.md"):
     eval_questions = [

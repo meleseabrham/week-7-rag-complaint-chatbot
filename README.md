@@ -10,13 +10,14 @@ CrediTrust is an advanced **Retrieval-Augmented Generation (RAG)** system design
 
 ## 🚀 Key Features
 
-- **Advanced RAG Pipeline**: Uses semantic search to retrieve the most relevant complaint snippets before generating answers.
+- **Advanced RAG Pipeline**: Uses **Multi-Query Expansion** and **Cross-Encoder Re-ranking** (MS-MARCO) to ensure maximum retrieval precision and recall.
 - **Local LLM Execution**: Powered by `google/flan-t5-small`, ensuring data privacy and local processing.
 - **Interactive Streamlit Dashboard**:
     - **Token-by-Token Streaming**: Experience real-time response generation.
     - **Contextual Memory**: Remembers previous message turns for natural dialogue.
     - **Traceability**: Click "View Sources" to see the exact Complaint IDs and text used for the answer.
-    - **Admin Controls**: Dynamically adjust Retrieval K (Top-N) and monitor model status.
+    - **Market Intelligence**: Integrated distribution charts and session summarization.
+    - **Admin Controls**: Dynamically adjust parameters (Top-K) and monitor model health.
 - **Production-Ready Structure**: Clean, modular code optimized for scalability and maintenance.
 
 ---
