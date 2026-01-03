@@ -57,6 +57,7 @@ with st.sidebar:
     div.stButton > button:hover {
         background-color: #FF2B2B;
         color: white;
+        font-weight: bold;
         border: none;
     }
     </style>
@@ -68,7 +69,8 @@ with st.sidebar:
 
 # Display chat history
 for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
+    avatar = "👤" if message["role"] == "user" else "🤖"
+    with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
         if "sources" in message:
             with st.expander("View Sources"):
@@ -84,11 +86,11 @@ if rag:
         st.session_state.messages.append({"role": "user", "content": prompt})
         
         # Display user message
-        with st.chat_message("user"):
+        with st.chat_message("user", avatar="👤"):
             st.markdown(prompt)
 
         # Generate assistant response
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar="🤖"):
             with st.spinner("Analyzing complaints..."):
                 response = rag.answer_question(prompt)
                 full_response = response["result"]
