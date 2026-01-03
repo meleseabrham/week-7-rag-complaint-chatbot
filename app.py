@@ -66,7 +66,7 @@ stats = load_stats()
 # Sidebar: Branding and Controls
 with st.sidebar:
     if os.path.exists(LOGO_PATH):
-        st.image(LOGO_PATH, use_container_width=True)
+        st.image(LOGO_PATH, width=150)
     else:
         st.title("🛡️ CrediTrust")
     
@@ -77,7 +77,7 @@ with st.sidebar:
     
     with sb_tab1:
         st.subheader("Retrieval Intelligence")
-        top_k = st.slider("Discovery Pool (K)", min_value=10, max_value=50, value=20, help="Number of complaints to initially retrieve before re-ranking.")
+        top_k = st.slider("Discovery Pool (K)", min_value=5, max_value=50, value=5, help="Number of complaints to initially retrieve before re-ranking.")
         st.caption("Lower K is faster; Higher K + Re-ranking is more accurate.")
         
         st.subheader("Model Status")
