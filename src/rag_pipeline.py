@@ -48,10 +48,28 @@ Question: {question}
 
 Answer:"""
 
+    def _expand_query(self, query):
+        """Expand common financial acronyms for better retrieval."""
+        expansions = {
+            "bnpl": "Buy Now Pay Later",
+            "cc": "Credit Card",
+            "apr": "Annual Percentage Rate",
+            "cfpb": "Consumer Financial Protection Bureau"
+        }
+        words = query.lower().split()
+        expanded_words = [expansions.get(w, w) for w in words]
+        expanded_query = " ".join(expanded_words)
+        if expanded_query != query.lower():
+            print(f"Expanded query: '{query}' -> '{expanded_query}'")
+        return expanded_query
+
     def answer_question(self, question, history="", k=5):
         """Advanced RAG implementation with history and parameterized retrieval."""
+        # 0. Query Expansion
+        search_query = self._expand_query(question)
+        
         # 1. Retrieval
-        docs = self.vector_store.similarity_search(question, k=k)
+        docs = self.vector_store.similarity_search(search_query, k=k)
         context = "\n\n".join([f"[Source {i+1}]: {d.page_content}" for i, d in enumerate(docs)])
         
         # 2. Generation
@@ -66,8 +84,11 @@ Answer:"""
 
     def stream_answer(self, question, history="", k=5):
         """Yield tokens using TextIteratorStreamer for Streamlit."""
+        # 0. Query Expansion
+        search_query = self._expand_query(question)
+
         # 1. Retrieval
-        docs = self.vector_store.similarity_search(question, k=k)
+        docs = self.vector_store.similarity_search(search_query, k=k)
         context = "\n\n".join([f"[Source {i+1}]: {d.page_content}" for i, d in enumerate(docs)])
         
         # 2. Generation Setup
