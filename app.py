@@ -77,17 +77,33 @@ with st.sidebar:
     
     with sb_tab1:
         st.subheader("Retrieval Intelligence")
-        top_k = st.slider("Context Window (K)", min_value=1, max_value=10, value=5, help="Number of complaints to retrieve for context.")
+        top_k = st.slider("Discovery Pool (K)", min_value=10, max_value=50, value=20, help="Number of complaints to initially retrieve before re-ranking.")
+        st.caption("Lower K is faster; Higher K + Re-ranking is more accurate.")
         
         st.subheader("Model Status")
         if rag:
             st.success("🤖 Generative AI: Online")
             st.success("🗄️ Vector Index: Active")
+            st.success("⚖️ Re-ranker: Active")
         else:
             st.error("RAG Pipeline Offline")
 
         st.markdown("---")
-        st.subheader("Danger Zone")
+        st.subheader("Conversation Management")
+        
+        if st.button("📊 Summarize Current Session", use_container_width=True):
+            if st.session_state.messages:
+                with st.spinner("Synthesizing session insights..."):
+                    history_summary = ""
+                    for m in st.session_state.messages:
+                        history_summary += f"{m['role']}: {m['content']}\n"
+                    
+                    summary_prompt = f"Summarize the key financial issues and consumer concerns discussed in this conversation so far. Focus on patterns and risks.\n\nConversation:\n{history_summary}\n\nSummary:"
+                    summary_res = rag.pipe(summary_prompt, max_new_tokens=150)
+                    st.info(summary_res[0]['generated_text'])
+            else:
+                st.warning("Start a conversation first!")
+
         # Red button with bold hover
         st.markdown("""
         <style>

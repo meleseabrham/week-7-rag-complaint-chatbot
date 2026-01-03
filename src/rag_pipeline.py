@@ -5,6 +5,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import PromptTemplate
 from transformers import pipeline, AutoModelForSeq2SeqLM, AutoTokenizer, TextIteratorStreamer
 from threading import Thread
+from sentence_transformers import CrossEncoder
 
 class RAGPipeline:
     def __init__(self, vector_store_path="vector_store/faiss_index", model_name="all-MiniLM-L6-v2"):
@@ -23,6 +24,10 @@ class RAGPipeline:
         print(f"Loading local LLM: {model_id}...")
         self.tokenizer = AutoTokenizer.from_pretrained(model_id)
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_id)
+        
+        # Re-ranker Setup
+        print("Loading Cross-Encoder for re-ranking...")
+        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
         
         self.pipe = pipeline(
             "text2text-generation", 
@@ -50,32 +55,54 @@ User Question: {question}
 
 Helpful Response:"""
 
-    def _expand_query(self, query):
-        """Expand common financial acronyms for better retrieval."""
+    def _get_variants(self, query):
+        """Simple rule-based multi-query variation for recall boost."""
+        variants = [query]
         expansions = {
-            "bnpl": "Buy Now Pay Later",
-            "cc": "Credit Card",
-            "apr": "Annual Percentage Rate",
-            "interest rate": "interest rate savings account",
-            "money transfer": "money transfer wire transfer"
+            "bnpl": ["Buy Now Pay Later", "installments", "point of sale financing"],
+            "credit card": ["cc", "credit limit", "card fees"],
+            "money transfer": ["wire transfer", "western union", "remittance"],
+            "savings account": ["checking", "bank fees", "interest rates"]
         }
-        words = query.lower().split()
-        expanded_words = [expansions.get(w, w) for w in words]
-        return " ".join(expanded_words)
+        for key, vals in expansions.items():
+            if key in query.lower():
+                variants.extend(vals)
+        return list(set(variants))
 
-    def answer_question(self, question, history="", k=5):
-        """Advanced Hybrid RAG implementation."""
-        search_query = self._expand_query(question)
-        docs = self.vector_store.similarity_search(search_query, k=k)
-        context = "\n\n".join([f"Snippet {i+1}: {d.page_content}" for i, d in enumerate(docs)])
+    def _rerank_docs(self, query, docs, top_n=5):
+        """Use Cross-Encoder to re-rank retrieved documents."""
+        if not docs:
+            return []
         
+        pairs = [[query, d.page_content] for d in docs]
+        scores = self.reranker.predict(pairs)
+        
+        # Sort documents by scores
+        ranked_docs = [d for _, d in sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)]
+        return ranked_docs[:top_n]
+
+    def answer_question(self, question, history="", k=20):
+        """Advanced Hybrid RAG with Multi-Query Retrieval and Re-ranking."""
+        # 1. Multi-Query Retrieval
+        search_queries = self._get_variants(question)
+        all_docs = []
+        for q in search_queries:
+            all_docs.extend(self.vector_store.similarity_search(q, k=k//len(search_queries)))
+        
+        # De-duplicate docs by page_content
+        unique_docs = {d.page_content: d for d in all_docs}.values()
+        
+        # 2. Re-ranking
+        ranked_docs = self._rerank_docs(question, list(unique_docs))
+        
+        # 3. Generation
+        context = "\n\n".join([f"Snippet {i+1}: {d.page_content}" for i, d in enumerate(ranked_docs)])
         prompt = self.template.format(history=history, context=context, question=question)
         
-        # Enhanced generation parameters
         response = self.pipe(
             prompt, 
             max_new_tokens=256,
-            min_new_tokens=20, # Force more descriptive answers
+            min_new_tokens=20,
             repetition_penalty=1.2,
             do_sample=True,
             temperature=0.7
@@ -83,26 +110,30 @@ Helpful Response:"""
         
         return {
             "result": response[0]["generated_text"],
-            "source_documents": docs,
+            "source_documents": ranked_docs,
             "prompt_used": prompt
         }
 
-    def stream_answer(self, question, history="", k=5):
-        """Yield tokens using TextIteratorStreamer for Streamlit."""
-        # 0. Query Expansion
-        search_query = self._expand_query(question)
-
+    def stream_answer(self, question, history="", k=20):
+        """Advanced Streaming RAG with Re-ranking."""
         # 1. Retrieval
-        docs = self.vector_store.similarity_search(search_query, k=k)
-        context = "\n\n".join([f"Snippet {i+1}: {d.page_content}" for i, d in enumerate(docs)])
+        search_queries = self._get_variants(question)
+        all_docs = []
+        for q in search_queries:
+            all_docs.extend(self.vector_store.similarity_search(q, k=max(1, k//len(search_queries))))
         
-        # 2. Generation Setup
+        unique_docs = list({d.page_content: d for d in all_docs}.values())
+        
+        # 2. Re-ranking
+        ranked_docs = self._rerank_docs(question, unique_docs)
+        
+        # 3. Generation Setup
+        context = "\n\n".join([f"Snippet {i+1}: {d.page_content}" for i, d in enumerate(ranked_docs)])
         prompt = self.template.format(history=history, context=context, question=question)
         inputs = self.tokenizer(prompt, return_tensors="pt")
         
         streamer = TextIteratorStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True)
         
-        # 3. Threaded Generation with advanced parameters
         generation_kwargs = dict(
             **inputs, 
             streamer=streamer, 
@@ -115,7 +146,7 @@ Helpful Response:"""
         thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
         thread.start()
         
-        return streamer, docs
+        return streamer, ranked_docs
 
 def run_evaluation(rag, report_path="reports/task3_evaluation.md"):
     eval_questions = [
