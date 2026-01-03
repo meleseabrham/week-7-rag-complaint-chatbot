@@ -1,100 +1,112 @@
-# 🤖 Consumer Complaint RAG Chatbot
+# 🛡️ CrediTrust: Advanced RAG Complaint Analyst
 
-An intelligent, Retrieval-Augmented Generation (RAG) powered chatbot designed to navigate and answer questions about the CFPB (Consumer Financial Protection Bureau) database. This project leverages natural language processing to extract insights from thousands of consumer complaints spanning credit cards, personal loans, savings accounts, and more.
+[![GitHub License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
----
-
-## 🚀 Features
-
--   **Intelligent Data Preprocessing**: Automated cleaning, filtering, and stratified sampling of a massive complaint database (~9M+ records).
--   **Recursive Chunking**: High-context splitting of long consumer narratives to ensure semantic integrity during retrieval.
--   **Semantic Search**: Utilizes `all-MiniLM-L6-v2` embeddings for fast and accurate similarity matching.
--   **FAISS Vector Store**: Locally persisted vector database for lightning-fast retrieval of relevant complaint metadata and narratives.
--   **CI/CD Integrated**: Robust testing pipeline using GitHub Actions to ensure code quality and dependency reliability.
+CrediTrust is an advanced **Retrieval-Augmented Generation (RAG)** system designed to analyze and interpret consumer financial complaints from the CFPB database. It combines high-performance vector retrieval with local Large Language Models (LLMs) to provide grounded, traceable, and insightful answers to complex consumer queries.
 
 ---
 
-## 🛠️ Tech Stack
+## 🚀 Key Features
 
--   **Core Framework**: [LangChain](https://www.langchain.com/)
--   **Embeddings**: [Hugging Face Transformers](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)
--   **Vector Search**: [FAISS](https://github.com/facebookresearch/faiss)
--   **Data Wrangling**: Pandas, Scikit-learn
--   **Environment**: Python 3.10+
--   **Frontend**: Gradio / Streamlit (In Development)
+- **Advanced RAG Pipeline**: Uses semantic search to retrieve the most relevant complaint snippets before generating answers.
+- **Local LLM Execution**: Powered by `google/flan-t5-small`, ensuring data privacy and local processing.
+- **Interactive Streamlit Dashboard**:
+    - **Token-by-Token Streaming**: Experience real-time response generation.
+    - **Contextual Memory**: Remembers previous message turns for natural dialogue.
+    - **Traceability**: Click "View Sources" to see the exact Complaint IDs and text used for the answer.
+    - **Admin Controls**: Dynamically adjust Retrieval K (Top-N) and monitor model status.
+- **Production-Ready Structure**: Clean, modular code optimized for scalability and maintenance.
 
 ---
 
-## 📂 Project Structure
+## 🏗️ Project Architecture
 
-```bash
-rag-complaint-chatbot/
-├── .github/workflows/    # CI/CD pipelines (Unit Tests)
-├── data/                 # Raw and filtered CSV datasets (Git ignored)
-├── notebooks/            # EDA and experimental research
-├── src/                  # Core logic
-│   ├── preprocessing.py  # Data cleaning and filtering
-│   └── indexing.py       # Chunking and Vector Store building
-├── tests/                # Pytest unit tests
-├── vector_store/         # Persisted FAISS index files
-├── app.py                # Main chatbot application
-└── requirements.txt      # Project dependencies
+```mermaid
+graph TD
+    A[CFPB Raw Data] --> B[Preprocessing & Filtering]
+    B --> C[Cleaned CSV]
+    C --> D[Stratified Sampling]
+    D --> E[Recursive Text Chunking]
+    E --> F[all-MiniLM-L6-v2 Embeddings]
+    F --> G[(FAISS Vector Store)]
+    
+    H[User Query] --> I[Streamlit UI]
+    I --> J[RAG Pipeline]
+    J --> K[Similarity Search]
+    G --> K
+    K --> L[Contextual Prompt]
+    L --> M[flan-t5-small Generator]
+    M --> N[Streamed Response]
+    N --> I
 ```
 
 ---
 
-## ⚙️ Installation & Setup
+## 🛠️ Quick Start
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/meleseabrham/week-7-rag-complaint-chatbot.git
-   cd week-7-rag-complaint-chatbot
-   ```
+### 1. Prerequisites
+- Python 3.12 or higher
+- Git
 
-2. **Set up a virtual environment**:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
----
-
-## 🏃 Usage
-
-### 1. Data Preprocessing
-Clean and filter the raw CFPB dataset to focus on relevant products and non-empty narratives:
+### 2. Installation
 ```bash
+# Clone the repository
+git clone https://github.com/meleseabrham/week-7-rag-complaint-chatbot.git
+cd week-7-rag-complaint-chatbot
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 3. Data Preparation
+The pipeline requires a pre-built FAISS index. If you need to rebuild it from scratch:
+```bash
+# Preprocess raw data
 python src/preprocessing.py
-```
 
-### 2. Building the Vector Index
-Perform stratified sampling (12,000 records), chunk narratives, and build the FAISS vector index:
-```bash
+# Build the vector store (indexing)
 python src/indexing.py
 ```
 
-### 3. Running the Chatbot
-Launch the RAG-enabled interface:
+### 4. Run the Chatbot
+Launch the interactive advanced analyst:
 ```bash
-python app.py
+python -m streamlit run app.py
 ```
 
 ---
 
-## 🧪 Testing
-Run unit tests to verify data cleaning and indexing logic:
-```bash
-pytest
-```
+## 📂 Repository Structure
+
+- `app.py`: Main Streamlit application with advanced UI features.
+- `src/`: Core logic modules.
+    - `rag_pipeline.py`: RAG implementation (retrieval + generation + streaming).
+    - `indexing.py`: Text chunking and FAISS vector store creation.
+    - `preprocessing.py`: Data cleaning and stratified sampling.
+- `vector_store/`: Persisted FAISS index files.
+- `reports/`: Audit logs, interim reports, and qualitative evaluations.
+- `notebooks/`: Exploratory Data Analysis (EDA) and pipeline prototypes.
+- `tests/`: Unit tests for core processing logic.
 
 ---
 
-## 🤝 Contribution
-This project follows a feature-branch workflow. Please ensure all code passes CI tests before submitting a PR.
-- **`task-1`**: EDA and Preprocessing
-- **`task-2`**: Indexing and Embeddings
+## 📊 Evaluation Results
+The system has been qualitatively evaluated across multiple financial domains.
+Detailed findings can be found in [reports/task3_evaluation.md](reports/task3_evaluation.md).
+
+---
+
+## 🤝 Contributing
+Contributions are welcome! Please follow the branching strategy:
+- Create a `feature/` or `task/` branch for your changes.
+- Submit a Pull Request for review.
+
+---
+
+## 📜 License
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+---
+**Developed for the Kifya Week 7 Challenge**

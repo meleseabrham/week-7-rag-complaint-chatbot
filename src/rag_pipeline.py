@@ -3,7 +3,8 @@ import pandas as pd
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import PromptTemplate
-from transformers import pipeline, AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import pipeline, AutoModelForSeq2SeqLM, AutoTokenizer, TextIteratorStreamer
+from threading import Thread
 
 class RAGPipeline:
     def __init__(self, vector_store_path="vector_store/faiss_index", model_name="all-MiniLM-L6-v2"):
@@ -31,8 +32,15 @@ class RAGPipeline:
             device=-1 # CPU
         )
         
-        self.template = """You are a financial analyst assistant for CrediTrust. Your task is to answer questions about customer complaints. 
-Use the following retrieved complaint excerpts to formulate your answer. If the context doesn't contain the answer, state that you don't have enough information.
+        self.template = """You are a financial analyst assistant for CrediTrust. Your task is to provide accurate answers about customer complaints using ONLY the provided context.
+
+Instructions:
+1. If the context contains the answer, summarize it clearly.
+2. If the context does NOT explicitly mention the topic or contain the answer, state: "Based on the retrieved snippets, I don't have enough information to confirm that."
+3. Do NOT make up facts or say 'No' unless the context explicitly provides a negative.
+
+Chat History:
+{history}
 
 Context: {context}
 
@@ -40,20 +48,40 @@ Question: {question}
 
 Answer:"""
 
-    def answer_question(self, question, k=5):
-        """Manual RAG implementation to avoid broken chain imports."""
+    def answer_question(self, question, history="", k=5):
+        """Advanced RAG implementation with history and parameterized retrieval."""
         # 1. Retrieval
         docs = self.vector_store.similarity_search(question, k=k)
-        context = "\n\n".join([d.page_content for d in docs])
+        context = "\n\n".join([f"[Source {i+1}]: {d.page_content}" for i, d in enumerate(docs)])
         
         # 2. Generation
-        prompt = self.template.format(context=context, question=question)
+        prompt = self.template.format(history=history, context=context, question=question)
         response = self.pipe(prompt)
         
         return {
             "result": response[0]["generated_text"],
-            "source_documents": docs
+            "source_documents": docs,
+            "prompt_used": prompt
         }
+
+    def stream_answer(self, question, history="", k=5):
+        """Yield tokens using TextIteratorStreamer for Streamlit."""
+        # 1. Retrieval
+        docs = self.vector_store.similarity_search(question, k=k)
+        context = "\n\n".join([f"[Source {i+1}]: {d.page_content}" for i, d in enumerate(docs)])
+        
+        # 2. Generation Setup
+        prompt = self.template.format(history=history, context=context, question=question)
+        inputs = self.tokenizer(prompt, return_tensors="pt")
+        
+        streamer = TextIteratorStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True)
+        
+        # 3. Threaded Generation
+        generation_kwargs = dict(**inputs, streamer=streamer, max_new_tokens=256)
+        thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
+        thread.start()
+        
+        return streamer, docs
 
 def run_evaluation(rag, report_path="reports/task3_evaluation.md"):
     eval_questions = [
