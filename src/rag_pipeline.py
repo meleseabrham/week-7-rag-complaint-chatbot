@@ -32,21 +32,23 @@ class RAGPipeline:
             device=-1 # CPU
         )
         
-        self.template = """You are a financial analyst assistant for CrediTrust. Your task is to provide accurate answers about customer complaints using ONLY the provided context.
+        self.template = """You are 'CrediTrust AI', a sophisticated financial analyst assistant. 
 
-Instructions:
-1. If the context contains the answer, summarize it clearly.
-2. If the context does NOT explicitly mention the topic or contain the answer, state: "Based on the retrieved snippets, I don't have enough information to confirm that."
-3. Do NOT make up facts or say 'No' unless the context explicitly provides a negative.
+Your Goal:
+1. Be helpful, professional, and descriptive.
+2. If the 'Context' below contains relevant information, prioritize it and cite facts from it.
+3. If the 'Context' does NOT have the answer, do NOT just say 'No'. Instead, provide a general helpful explanation of the financial topic asked (like BNPL, Credit Cards, etc.) and mention that you couldn't find specific customer complaints about it in the database.
+4. Avoid one-word answers. 
 
 Chat History:
 {history}
 
-Context: {context}
+Context (Complaint Snippets):
+{context}
 
-Question: {question}
+User Question: {question}
 
-Answer:"""
+Helpful Response:"""
 
     def _expand_query(self, query):
         """Expand common financial acronyms for better retrieval."""
@@ -54,27 +56,30 @@ Answer:"""
             "bnpl": "Buy Now Pay Later",
             "cc": "Credit Card",
             "apr": "Annual Percentage Rate",
-            "cfpb": "Consumer Financial Protection Bureau"
+            "interest rate": "interest rate savings account",
+            "money transfer": "money transfer wire transfer"
         }
         words = query.lower().split()
         expanded_words = [expansions.get(w, w) for w in words]
-        expanded_query = " ".join(expanded_words)
-        if expanded_query != query.lower():
-            print(f"Expanded query: '{query}' -> '{expanded_query}'")
-        return expanded_query
+        return " ".join(expanded_words)
 
     def answer_question(self, question, history="", k=5):
-        """Advanced RAG implementation with history and parameterized retrieval."""
-        # 0. Query Expansion
+        """Advanced Hybrid RAG implementation."""
         search_query = self._expand_query(question)
-        
-        # 1. Retrieval
         docs = self.vector_store.similarity_search(search_query, k=k)
-        context = "\n\n".join([f"[Source {i+1}]: {d.page_content}" for i, d in enumerate(docs)])
+        context = "\n\n".join([f"Snippet {i+1}: {d.page_content}" for i, d in enumerate(docs)])
         
-        # 2. Generation
         prompt = self.template.format(history=history, context=context, question=question)
-        response = self.pipe(prompt)
+        
+        # Enhanced generation parameters
+        response = self.pipe(
+            prompt, 
+            max_new_tokens=256,
+            min_new_tokens=20, # Force more descriptive answers
+            repetition_penalty=1.2,
+            do_sample=True,
+            temperature=0.7
+        )
         
         return {
             "result": response[0]["generated_text"],
@@ -89,7 +94,7 @@ Answer:"""
 
         # 1. Retrieval
         docs = self.vector_store.similarity_search(search_query, k=k)
-        context = "\n\n".join([f"[Source {i+1}]: {d.page_content}" for i, d in enumerate(docs)])
+        context = "\n\n".join([f"Snippet {i+1}: {d.page_content}" for i, d in enumerate(docs)])
         
         # 2. Generation Setup
         prompt = self.template.format(history=history, context=context, question=question)
@@ -97,8 +102,16 @@ Answer:"""
         
         streamer = TextIteratorStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True)
         
-        # 3. Threaded Generation
-        generation_kwargs = dict(**inputs, streamer=streamer, max_new_tokens=256)
+        # 3. Threaded Generation with advanced parameters
+        generation_kwargs = dict(
+            **inputs, 
+            streamer=streamer, 
+            max_new_tokens=256,
+            min_new_tokens=20,
+            repetition_penalty=1.2,
+            do_sample=True,
+            temperature=0.7
+        )
         thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
         thread.start()
         
