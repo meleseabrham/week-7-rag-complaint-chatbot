@@ -45,6 +45,23 @@ with st.sidebar:
     - **Embeddings**: all-MiniLM-L6-v2
     - **LLM**: flan-t5-small (Local)
     """)
+    
+    # Custom CSS for the red clear button
+    st.markdown("""
+    <style>
+    div.stButton > button:first-child {
+        background-color: #FF4B4B;
+        color: white;
+        border: none;
+    }
+    div.stButton > button:hover {
+        background-color: #FF2B2B;
+        color: white;
+        border: none;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     if st.button("Clear Chat History"):
         st.session_state.messages = []
         st.rerun()
