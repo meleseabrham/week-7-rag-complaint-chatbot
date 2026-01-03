@@ -1,58 +1,71 @@
 import streamlit as st
 import sys
 import os
+import time
 
-# Add src to path if needed (though current dir is project root)
+# Add src to path if needed
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 
 from rag_pipeline import RAGPipeline
 
 # Page configuration
 st.set_page_config(
-    page_title="CrediTrust - Consumer Complaint Analyst",
-    page_icon="🤖",
-    layout="centered"
+    page_title="CrediTrust Advanced Analyst",
+    page_icon="🛡️",
+    layout="wide"
 )
 
-# Header
-st.title("🤖 CrediTrust Complaint Assistant")
+# Custom CSS for polished UI
 st.markdown("""
-Welcome to the internal CrediTrust Financial complaint analysis portal. 
-Ask questions about consumer complaints to get grounded, data-driven answers.
-""")
+<style>
+    .reportview-container {
+        background: #f0f2f6;
+    }
+    .stChatFloatingInputContainer {
+        padding-bottom: 20px;
+    }
+    .source-card {
+        padding: 10px;
+        border-radius: 5px;
+        background-color: #f9f9f9;
+        border-left: 5px solid #FF4B4B;
+        margin-bottom: 10px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# Initialize RAG Pipeline (Cached as a resource)
+# Initialize RAG Pipeline
 @st.cache_resource
 def load_rag():
-    try:
-        return RAGPipeline()
-    except Exception as e:
-        st.error(f"Failed to load RAG Pipeline: {e}")
-        return None
+    return RAGPipeline()
 
 rag = load_rag()
 
-# Session state for chat history
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-# Sidebar - Information
+# Sidebar: Advanced Controls and Dashboard
 with st.sidebar:
-    st.header("Project Info")
-    st.info("""
-    This RAG system uses:
-    - **Vector Store**: FAISS
-    - **Embeddings**: all-MiniLM-L6-v2
-    - **LLM**: flan-t5-small (Local)
-    """)
+    st.title("🛡️ Dashboard")
+    st.markdown("---")
     
-    # Custom CSS for the red clear button
+    st.subheader("Retrieval Settings")
+    top_k = st.slider("Retrieval K (Context Chunks)", min_value=1, max_value=10, value=5)
+    
+    st.subheader("Model Status")
+    if rag:
+        st.success("Internal LLM: flan-t5-small (Online)")
+        st.success("Vector Store: FAISS (Loaded)")
+    else:
+        st.error("RAG Pipeline Offline")
+
+    st.markdown("---")
+    st.subheader("System Actions")
+    # Custom CSS for the red clear button (Bold on hover as requested)
     st.markdown("""
     <style>
     div.stButton > button:first-child {
         background-color: #FF4B4B;
         color: white;
         border: none;
+        width: 100%;
     }
     div.stButton > button:hover {
         background-color: #FF2B2B;
@@ -63,9 +76,17 @@ with st.sidebar:
     </style>
     """, unsafe_allow_html=True)
     
-    if st.button("Clear Chat History"):
+    if st.button("Clear Conversation"):
         st.session_state.messages = []
         st.rerun()
+
+# Main UI
+st.title("🛡️ CrediTrust Advanced Analyst")
+st.caption("AI-Powered Financial Complaint Intelligence")
+
+# Session state for chat history
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
 # Display chat history
 for message in st.session_state.messages:
@@ -73,51 +94,53 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
         if "sources" in message:
-            with st.expander("View Sources"):
-                for src in message["sources"]:
-                    st.write(f"**Complaint ID**: {src['complaint_id']}")
-                    st.write(f"**Snippet**: {src['content']}")
-                    st.divider()
+            with st.expander("Inspection: Retrieval Sources"):
+                for i, src in enumerate(message["sources"]):
+                    st.markdown(f"**Source {i+1} (ID: {src['id']})**")
+                    st.info(src['content'])
 
-# Input area
+# Input logic
 if rag:
-    if prompt := st.chat_input("Ask a question about customer complaints..."):
-        # Add user message to history
+    if prompt := st.chat_input("Query the complaint database..."):
+        # Add user message
         st.session_state.messages.append({"role": "user", "content": prompt})
-        
-        # Display user message
         with st.chat_message("user", avatar="👤"):
             st.markdown(prompt)
 
-        # Generate assistant response
+        # Generate history string for context
+        history_text = ""
+        for m in st.session_state.messages[-4:-1]: # Last 3 turns
+            role = "Human" if m["role"] == "user" else "Assistant"
+            history_text += f"{role}: {m['content']}\n"
+
+        # Assistant response with STREAMING
         with st.chat_message("assistant", avatar="🤖"):
-            with st.spinner("Analyzing complaints..."):
-                response = rag.answer_question(prompt)
-                full_response = response["result"]
-                sources = response["source_documents"]
+            placeholder = st.empty()
+            full_response = ""
             
-            st.markdown(full_response)
+            with st.spinner("Retrieving and generating..."):
+                streamer, docs = rag.stream_answer(prompt, history=history_text, k=top_k)
             
-            # Format sources for metadata storage
-            formatted_sources = []
-            for doc in sources:
-                formatted_sources.append({
-                    "complaint_id": doc.metadata.get("complaint_id", "N/A"),
-                    "content": doc.page_content
-                })
+            # Streaming loop
+            for new_text in streamer:
+                full_response += new_text
+                placeholder.markdown(full_response + "▌")
+            placeholder.markdown(full_response)
             
-            # Display sources in UI immediately
-            with st.expander("View Sources"):
-                for src in formatted_sources:
-                    st.write(f"**Complaint ID**: {src['complaint_id']}")
-                    st.write(f"**Snippet**: {src['content']}")
-                    st.divider()
+            # Format sources
+            formatted_sources = [{"id": d.metadata.get("complaint_id", "N/A"), "content": d.page_content} for d in docs]
             
-            # Add assistant message to history
+            # Display sources
+            with st.expander("Inspection: Retrieval Sources"):
+                for i, src in enumerate(formatted_sources):
+                    st.markdown(f"**Source {i+1} (ID: {src['id']})**")
+                    st.info(src['content'])
+            
+            # Store history
             st.session_state.messages.append({
-                "role": "assistant", 
+                "role": "assistant",
                 "content": full_response,
                 "sources": formatted_sources
             })
 else:
-    st.warning("⚠️ RAG Pipeline is not initialized. Please ensure the vector store exists.")
+    st.warning("Please wait for the RAG system to initialize...")
